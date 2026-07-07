@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>宠物零食多机会抽奖（精准指针）</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex; justify-content: center; align-items: center; min-height: 100vh;
+      background: linear-gradient(135deg, #fef7e9, #fde4c2);
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif; padding: 20px; flex-direction: column;
+    }
+    .container { position: relative; width: 300px; height: 300px; margin: 0 auto; }
+    .pointer {
+      position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+      width: 0; height: 0; border-left: 18px solid transparent;
+      border-right: 18px solid transparent; border-top: 34px solid #d43c33;
+      z-index: 10; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+    }
+    .pointer::after {
+      content: ''; position: absolute; top: -38px; left: -10px;
+      width: 20px; height: 20px; background: #d43c33; border-radius: 50%;
+    }
+    #wheelCanvas {
+      width: 100%; height: 100%; display: block;
+      transition: transform 4.2s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+      border-radius: 50%; box-shadow: 0 8px 25px rgba(0,0,0,0.15), 0 0 0 10px #fff3e0, 0 0 0 14px #e0b084;
+      background: #fffbf2;
+    }
+    .btn-group { display: flex; flex-direction: column; gap: 18px; margin-top: 35px; width: 300px; }
+    .btn-chance {
+      display: flex; justify-content: space-between; align-items: center;
+      background: white; padding: 14px 18px; border-radius: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.2s;
+      border: 2px solid transparent; position: relative;
+    }
+    .btn-chance:active { transform: scale(0.97); }
+    .btn-chance.disabled { opacity: 0.5; pointer-events: none; background: #eee; }
+    .chance-label { font-weight: bold; color: #5d3a1a; font-size: 16px; }
+    .chance-count { font-size: 13px; color: #b08d6a; }
+    .result-box {
+      margin-top: 20px; background: white; padding: 12px 20px; border-radius: 40px;
+      font-weight: bold; color: #5d3a1a; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      min-height: 48px; display: flex; align-items: center; justify-content: center;
+      text-align: center; font-size: 16px; width: 300px;
+    }
+    .tip { color: #b08d6a; font-size: 13px; margin-top: 12px; }
+    .records-panel {
+      width: 300px; margin-top: 35px; background: white; border-radius: 20px;
+      padding: 18px 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-height: 250px; overflow-y: auto;
+    }
+    .records-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 10px;
+    }
+    .records-header span { font-weight: bold; color: #5d3a1a; }
+    .clear-records-btn { background: none; border: none; color: #d43c33; font-size: 13px; cursor: pointer; }
+    .record-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px dashed #f0e0cc; font-size: 14px;
+    }
+    .record-left { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+    .record-prize { color: #d43c33; font-weight: bold; }
+    .record-source { color: #888; font-size: 12px; }
+    .record-time { color: #aaa; font-size: 11px; }
+    .record-amount { color: #e67e22; font-size: 12px; margin-left: 4px; }
+    .record-used { color: #27ae60; font-weight: bold; font-size: 18px; margin-left: 8px; }
+    .record-actions { display: flex; gap: 6px; align-items: center; }
+    .mark-used-btn, .delete-record-btn {
+      background: none; border: 1px solid #d43c33; color: #d43c33;
+      font-size: 12px; padding: 3px 10px; border-radius: 10px; cursor: pointer;
+      white-space: nowrap;
+    }
+    .delete-record-btn { border-color: #999; color: #999; }
+    .mark-used-btn:active { background: #d43c33; color: white; }
+    .delete-record-btn:active { background: #999; color: white; }
+    .empty-records { text-align: center; color: #aaa; padding: 18px 0; font-size: 14px; }
+    .admin-indicator {
+      position: absolute; top: -4px; right: -4px; width: 10px; height: 10px;
+      background: red; border-radius: 50%; display: none;
+    }
+    .admin-mode .admin-indicator { display: block; }
+    .admin-entry, .reset-entry {
+      margin-top: 18px; font-size: 13px; color: #aaa; background: none; border: none;
+      cursor: pointer; text-decoration: underline; opacity: 0.6; display: block;
+    }
+    .admin-entry:hover, .reset-entry:hover { opacity: 1; }
+    .modal {
+      display: none; position: fixed; top:0; left:0; width:100%; height:100%;
+      background: rgba(0,0,0,0.7); z-index:100; align-items: center; justify-content: center;
+    }
+    .modal-content { background: white; border-radius: 20px; padding: 25px; text-align: center; width: 260px; }
+    .modal-btn {
+      background: #d43c33; color: white; border: none; padding: 10px 25px;
+      border-radius: 30px; font-weight: bold; margin-top: 12px; font-size: 16px;
+    }
+    .modal-close { background: #999; margin-left: 10px; }
+    .modal input {
+      width: 80%; padding: 8px; margin: 12px 0; border: 1px solid #ddd;
+      border-radius: 8px; text-align: center; font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2 style="color:#6b4a2c; margin-bottom:15px;">🐾 毛孩子零食抽奖 🐾</h2>
+  <div class="container">
+    <div class="pointer"></div>
+    <canvas id="wheelCanvas" width="600" height="600"></canvas>
+  </div>
+  <div class="result-box" id="resultDisplay">选择一种抽奖机会吧~</div>
+
+  <div class="btn-group">
+    <div class="btn-chance" id="consumeBtn">
+      <span class="chance-label">🛒 消费抽奖</span>
+      <span class="chance-count" id="consumeCount">满19元抽奖</span>
+      <span class="admin-indicator"></span>
+    </div>
+    <div class="btn-chance" id="shareBtn">
+      <span class="chance-label">📤 分享朋友圈抽奖</span>
+      <span class="chance-count" id="shareCount">今日剩余 1 次</span>
+      <span class="admin-indicator"></span>
+    </div>
+    <div class="btn-chance" id="wechatBtn">
+      <span class="chance-label">💬 加老板微信抽奖</span>
+      <span class="chance-count" id="wechatCount">剩余 1 次</span>
+      <span class="admin-indicator"></span>
+    </div>
+  </div>
+
+  <div class="records-panel" id="recordsPanel">
+    <div class="records-header">
+      <span>🎯 我的中奖记录</span>
+      <button class="clear-records-btn" id="clearRecordsBtn">清空记录</button>
+    </div>
+    <div id="recordsList"><div class="empty-records">暂无中奖记录</div></div>
+  </div>
+
+  <div class="tip">奖品请截图联系客服领取</div>
+  <div id="adminTip" style="color:red; font-size:12px; margin-top:4px; display:none;">🔧 管理员模式已开启，次数无限</div>
+
+  <button class="admin-entry" id="adminEntryBtn">管理员入口</button>
+  <button class="reset-entry" id="resetAllBtn">重置所有抽奖机会</button>
+
+  <!-- 消费金额弹窗 -->
+  <div class="modal" id="consumeModal">
+    <div class="modal-content">
+      <h3>请输入消费金额</h3>
+      <p style="font-size:13px;color:#888;">消费满19元即可抽奖</p>
+      <input type="number" id="consumeAmount" placeholder="最低19元" step="0.01" min="0">
+      <div>
+        <button class="modal-btn" id="confirmConsumeBtn">开始抽奖</button>
+        <button class="modal-btn modal-close" id="closeConsumeModal">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 微信弹窗（纯文字） -->
+  <div class="modal" id="wechatModal">
+    <div class="modal-content">
+      <h3>添加老板微信</h3>
+      <p style="font-size:14px;color:#5d3a1a; margin:15px 0;">请添加老板微信后发送“抽奖”</p>
+      <p style="font-size:12px;color:#888;">微信号：xxxx（请替换为您的微信号）</p>
+      <button class="modal-btn" id="confirmWechatBtn">我已添加，开始抽奖</button>
+      <button class="modal-btn modal-close" id="closeWechatModal">关闭</button>
+    </div>
+  </div>
+
+  <!-- 管理员密码弹窗 -->
+  <div class="modal" id="adminModal">
+    <div class="modal-content">
+      <h3>管理员验证</h3>
+      <p style="font-size:14px;color:#888;">请输入管理密码</p>
+      <input type="password" id="adminPassword" placeholder="请输入密码">
+      <div>
+        <button class="modal-btn" id="confirmAdminBtn">确认</button>
+        <button class="modal-btn modal-close" id="closeAdminModal">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 重置所有弹窗 -->
+  <div class="modal" id="resetAllModal">
+    <div class="modal-content">
+      <h3>重置所有抽奖机会</h3>
+      <p style="font-size:14px;color:#888;">此操作将恢复所有抽奖次数，需输入管理密码</p>
+      <input type="password" id="resetAllPassword" placeholder="请输入密码">
+      <div>
+        <button class="modal-btn" id="confirmResetAllBtn">确认重置</button>
+        <button class="modal-btn modal-close" id="closeResetAllModal">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标记使用弹窗 -->
+  <div class="modal" id="markUsedModal">
+    <div class="modal-content">
+      <h3>标记已使用</h3>
+      <p style="font-size:14px;color:#888;">请输入管理员密码确认操作</p>
+      <input type="password" id="markUsedPassword" placeholder="请输入密码">
+      <div>
+        <button class="modal-btn" id="confirmMarkUsedBtn">确认标记</button>
+        <button class="modal-btn modal-close" id="closeMarkUsedModal">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除记录弹窗 -->
+  <div class="modal" id="deleteRecordModal">
+    <div class="modal-content">
+      <h3>删除中奖记录</h3>
+      <p style="font-size:14px;color:#888;">请输入管理员密码确认删除</p>
+      <input type="password" id="deletePassword" placeholder="请输入密码">
+      <div>
+        <button class="modal-btn" id="confirmDeleteBtn">确认删除</button>
+        <button class="modal-btn modal-close" id="closeDeleteModal">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const canvas = document.getElementById('wheelCanvas');
+      const ctx = canvas.getContext('2d');
+      const resultDiv = document.getElementById('resultDisplay');
+
+      const prizes = [
+        { name: '一等奖', desc: '5折券', color: '#E63946' },
+        { name: '二等奖', desc: '75折券', color: '#F4A261' },
+        { name: '四等奖', desc: '9折券', color: '#2A9D8F' },
+        { name: '三等奖', desc: '鸭肉卷红薯零食一份', color: '#E9C46A' },
+        { name: '五等奖', desc: '满50-5抵扣券', color: '#287271' }
+      ];
+
+      const defaultProbs = [0.01, 0.05, 0.40, 0.07, 0.47];
+      const secondProbs = [0.01, 0.40, 0.09, 0.40, 0.10];
+      const numSectors = prizes.length;
+      const anglePerSector = 360 / numSectors; // 72度
+
+      // 预计算每个扇区中心角度（度，从正上方顺时针）
+      const sectorCenters = prizes.map((_, i) => {
+        let deg = i * anglePerSector - 54; // 绘制起始角 i*72-90，中心角 i*72-54
+        return (deg + 360) % 360;
+      });
+
+      const STORAGE_KEY = 'pet_lottery_v2';
+      const RECORDS_KEY = 'pet_lottery_records';
+      const ADMIN_KEY = 'pet_admin_mode';
+      const DAILY_COUNT_KEY = 'pet_daily_spin_count';
+      const ADMIN_PASSWORD = 'admin';
+      let isAdminMode = localStorage.getItem(ADMIN_KEY) === 'true';
+      let pendingMarkTime = null;
+      let pendingDeleteTime = null;
+
+      // 获取今日抽奖次数
+      function getDailyCount() {
+        const raw = localStorage.getItem(DAILY_COUNT_KEY);
+        if (!raw) return 0;
+        try {
+          const data = JSON.parse(raw);
+          if (data.date === todayStr()) return data.count || 0;
+        } catch (e) {}
+        return 0;
+      }
+
+      function incrementDailyCount() {
+        const today = todayStr();
+        const current = getDailyCount();
+        const newCount = current + 1;
+        localStorage.setItem(DAILY_COUNT_KEY, JSON.stringify({ date: today, count: newCount }));
+        return newCount;
+      }
+
+      function resetAllChances() {
+        localStorage.removeItem(DAILY_COUNT_KEY);
+        localStorage.removeItem(STORAGE_KEY);
+      }
+
+      function getCurrentProbs() {
+        const count = getDailyCount();
+        if (count === 0) return defaultProbs;
+        if (count === 1) return secondProbs;
+        return defaultProbs;
+      }
+
+      function loadState() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : { shareDate: null, wechatUsed: false };
+      }
+      function saveState(state) { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+      function loadRecords() {
+        const raw = localStorage.getItem(RECORDS_KEY);
+        return raw ? JSON.parse(raw) : [];
+      }
+      function saveRecords(records) { localStorage.setItem(RECORDS_KEY, JSON.stringify(records)); }
+
+      function addRecord(prizeName, prizeDesc, source, amount = null) {
+        const records = loadRecords();
+        records.push({
+          name: prizeName, desc: prizeDesc, source: source,
+          amount: amount,
+          time: new Date().toLocaleString('zh-CN', { hour12: false }),
+          used: false
+        });
+        if (records.length > 100) records.shift();
+        saveRecords(records);
+        renderRecords();
+      }
+
+      function markRecordAsUsed(recordTime) {
+        const records = loadRecords();
+        const record = records.find(r => r.time === recordTime);
+        if (record && !record.used) {
+          record.used = true;
+          saveRecords(records);
+          renderRecords();
+          return true;
+        }
+        return false;
+      }
+
+      function deleteRecord(recordTime) {
+        const records = loadRecords();
+        const filtered = records.filter(r => r.time !== recordTime);
+        if (filtered.length !== records.length) {
+          saveRecords(filtered);
+          renderRecords();
+          return true;
+        }
+        return false;
+      }
+
+      function renderRecords() {
+        const records = loadRecords();
+        const listDiv = document.getElementById('recordsList');
+        if (records.length === 0) {
+          listDiv.innerHTML = '<div class="empty-records">暂无中奖记录</div>';
+          return;
+        }
+        let html = '';
+        records.slice().reverse().forEach(r => {
+          let amountStr = '';
+          if (r.amount !== null && r.amount !== undefined) {
+            amountStr = `<span class="record-amount">¥${parseFloat(r.amount).toFixed(2)}</span>`;
+          }
+          const usedIcon = r.used ? '<span class="record-used">✔️ 已使用</span>' : '';
+          const markBtn = (!r.used) ? `<button class="mark-used-btn" data-time="${r.time}">标记使用</button>` : '';
+          const deleteBtn = isAdminMode ? `<button class="delete-record-btn" data-time="${r.time}">删除</button>` : '';
+          html += `
+            <div class="record-item">
+              <div class="record-left">
+                <div>
+                  <span class="record-prize">${r.name} ${r.desc}</span>
+                  <span class="record-source">（${r.source}）</span>
+                  ${amountStr}
+                  ${usedIcon}
+                </div>
+                <div class="record-time">${r.time}</div>
+              </div>
+              <div class="record-actions">
+                ${markBtn}
+                ${deleteBtn}
+              </div>
+            </div>
+          `;
+        });
+        listDiv.innerHTML = html;
+
+        document.querySelectorAll('.mark-used-btn').forEach(btn => {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            pendingMarkTime = this.getAttribute('data-time');
+            document.getElementById('markUsedModal').style.display = 'flex';
+            document.getElementById('markUsedPassword').value = '';
+          });
+        });
+
+        document.querySelectorAll('.delete-record-btn').forEach(btn => {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            pendingDeleteTime = this.getAttribute('data-time');
+            document.getElementById('deleteRecordModal').style.display = 'flex';
+            document.getElementById('deletePassword').value = '';
+          });
+        });
+      }
+
+      document.getElementById('clearRecordsBtn').addEventListener('click', function() {
+        if (!isAdminMode) { alert('仅管理员可操作'); return; }
+        if (confirm('确定清空所有中奖记录吗？')) {
+          saveRecords([]);
+          renderRecords();
+        }
+      });
+
+      function todayStr() { return new Date().toISOString().slice(0,10); }
+
+      function updateUI() {
+        const state = loadState();
+        const today = todayStr();
+        document.getElementById('consumeCount').textContent = '满19元抽奖';
+        document.getElementById('consumeBtn').classList.remove('disabled');
+        const shareLeft = (isAdminMode || state.shareDate !== today) ? 1 : 0;
+        document.getElementById('shareCount').textContent = isAdminMode ? '∞ 次' : `今日剩余 ${shareLeft} 次`;
+        document.getElementById('shareBtn').classList.toggle('disabled', shareLeft === 0 && !isAdminMode);
+        const wechatLeft = (isAdminMode || !state.wechatUsed) ? 1 : 0;
+        document.getElementById('wechatCount').textContent = isAdminMode ? '∞ 次' : `剩余 ${wechatLeft} 次`;
+        document.getElementById('wechatBtn').classList.toggle('disabled', wechatLeft === 0 && !isAdminMode);
+        document.getElementById('adminTip').style.display = isAdminMode ? 'block' : 'none';
+        document.querySelectorAll('.btn-chance').forEach(b => b.classList.toggle('admin-mode', isAdminMode));
+        const entryBtn = document.getElementById('adminEntryBtn');
+        if (isAdminMode) { entryBtn.textContent = '退出管理模式'; entryBtn.style.color = '#d43c33'; }
+        else { entryBtn.textContent = '管理员入口'; entryBtn.style.color = '#aaa'; }
+      }
+
+      const sourceMap = { consume: '消费抽奖', share: '分享抽奖', wechat: '微信抽奖' };
+
+      function startConsumeSpin() {
+        if (isSpinning) return;
+        document.getElementById('consumeAmount').value = '';
+        document.getElementById('consumeModal').style.display = 'flex';
+      }
+      function startShareSpin() {
+        if (isSpinning) return;
+        const state = loadState();
+        const today = todayStr();
+        if (!isAdminMode && state.shareDate === today) { alert('今日分享抽奖机会已用完'); return; }
+        if (!isAdminMode && !confirm('请先分享本活动到朋友圈，然后点击“确定”开始抽奖。')) return;
+        if (!isAdminMode) { state.shareDate = today; saveState(state); }
+        updateUI();
+        executeSpin('share');
+      }
+      function startWechatSpin() {
+        if (isSpinning) return;
+        const state = loadState();
+        if (!isAdminMode && state.wechatUsed) { alert('您已领取过加微信抽奖机会'); return; }
+        if (!isAdminMode) { document.getElementById('wechatModal').style.display = 'flex'; return; }
+        executeSpin('wechat');
+      }
+
+      function executeSpin(source, amount = null) {
+        if (isSpinning) return;
+        const probsToUse = getCurrentProbs();
+        isSpinning = true;
+        resultDiv.textContent = '转盘转动中...';
+
+        const winIndex = getRandomPrizeIndex(probsToUse);
+        const winPrize = prizes[winIndex];
+        // 精确计算旋转角度
+        const sectorCenterDeg = sectorCenters[winIndex];
+        let targetAngle = (270 - sectorCenterDeg + 360) % 360;
+        const currentMod = currentRotation % 360;
+        let delta = targetAngle - currentMod;
+        if (delta < 0) delta += 360;
+        if (delta === 0) delta = 360; // 至少转一整圈
+        const fullSpins = 5 * 360;
+        const newRotation = currentRotation + fullSpins + delta;
+
+        canvas.style.transition = 'transform 4.2s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
+        canvas.style.transform = `rotate(${newRotation}deg)`;
+        currentRotation = newRotation;
+
+        setTimeout(() => {
+          canvas.style.transition = 'none';
+          isSpinning = false;
+          incrementDailyCount();
+          resultDiv.innerHTML = `🎉 恭喜！获得 <span style="color:#d43c33;">${winPrize.name}：${winPrize.desc}</span>`;
+          addRecord(winPrize.name, winPrize.desc, sourceMap[source] || source, amount);
+        }, 4300);
+      }
+
+      document.getElementById('confirmConsumeBtn').addEventListener('click', function() {
+        const amountInput = document.getElementById('consumeAmount');
+        let amount = amountInput.value.trim();
+        if (amount === '') { alert('请输入消费金额'); return; }
+        amount = parseFloat(amount);
+        if (isNaN(amount) || amount < 0) { alert('请输入有效的消费金额'); return; }
+        if (amount < 19) { alert('消费满19元才能抽奖哦~'); return; }
+        document.getElementById('consumeModal').style.display = 'none';
+        executeSpin('consume', amount);
+      });
+      document.getElementById('closeConsumeModal').addEventListener('click', () => document.getElementById('consumeModal').style.display = 'none');
+
+      document.getElementById('confirmWechatBtn').addEventListener('click', function() {
+        const state = loadState();
+        if (!isAdminMode) { state.wechatUsed = true; saveState(state); }
+        updateUI();
+        document.getElementById('wechatModal').style.display = 'none';
+        executeSpin('wechat');
+      });
+      document.getElementById('closeWechatModal').addEventListener('click', () => document.getElementById('wechatModal').style.display = 'none');
+
+      document.getElementById('consumeBtn').addEventListener('click', startConsumeSpin);
+      document.getElementById('shareBtn').addEventListener('click', startShareSpin);
+      document.getElementById('wechatBtn').addEventListener('click', startWechatSpin);
+
+      document.getElementById('adminEntryBtn').addEventListener('click', function() {
+        if (isAdminMode) {
+          if (confirm('确定退出管理员模式吗？')) {
+            isAdminMode = false;
+            localStorage.setItem(ADMIN_KEY, 'false');
+            updateUI();
+            renderRecords();
+          }
+        } else {
+          document.getElementById('adminModal').style.display = 'flex';
+          document.getElementById('adminPassword').value = '';
+        }
+      });
+      document.getElementById('confirmAdminBtn').addEventListener('click', function() {
+        if (document.getElementById('adminPassword').value === ADMIN_PASSWORD) {
+          isAdminMode = true;
+          localStorage.setItem(ADMIN_KEY, 'true');
+          updateUI();
+          renderRecords();
+          document.getElementById('adminModal').style.display = 'none';
+        } else { alert('密码错误'); }
+      });
+      document.getElementById('closeAdminModal').addEventListener('click', () => document.getElementById('adminModal').style.display = 'none');
+
+      document.getElementById('resetAllBtn').addEventListener('click', () => {
+        document.getElementById('resetAllModal').style.display = 'flex';
+        document.getElementById('resetAllPassword').value = '';
+      });
+      document.getElementById('confirmResetAllBtn').addEventListener('click', function() {
+        if (document.getElementById('resetAllPassword').value === ADMIN_PASSWORD) {
+          resetAllChances();
+          document.getElementById('resetAllModal').style.display = 'none';
+          alert('所有抽奖机会已重置！');
+          updateUI();
+        } else alert('密码错误');
+      });
+      document.getElementById('closeResetAllModal').addEventListener('click', () => document.getElementById('resetAllModal').style.display = 'none');
+
+      document.getElementById('confirmMarkUsedBtn').addEventListener('click', function() {
+        if (document.getElementById('markUsedPassword').value !== ADMIN_PASSWORD) { alert('密码错误'); return; }
+        if (pendingMarkTime) {
+          if (markRecordAsUsed(pendingMarkTime)) {
+            document.getElementById('markUsedModal').style.display = 'none';
+            pendingMarkTime = null;
+          } else alert('记录不存在或已标记');
+        }
+      });
+      document.getElementById('closeMarkUsedModal').addEventListener('click', () => {
+        document.getElementById('markUsedModal').style.display = 'none';
+        pendingMarkTime = null;
+      });
+
+      document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (document.getElementById('deletePassword').value !== ADMIN_PASSWORD) { alert('密码错误'); return; }
+        if (pendingDeleteTime) {
+          if (deleteRecord(pendingDeleteTime)) {
+            document.getElementById('deleteRecordModal').style.display = 'none';
+            pendingDeleteTime = null;
+          } else alert('记录不存在');
+        }
+      });
+      document.getElementById('closeDeleteModal').addEventListener('click', () => {
+        document.getElementById('deleteRecordModal').style.display = 'none';
+        pendingDeleteTime = null;
+      });
+
+      // 绘制转盘（均等扇形）
+      function drawWheel() {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = canvas.width / 2 * 0.85;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < numSectors; i++) {
+          const startAngleDeg = i * anglePerSector - 90;
+          const endAngleDeg = startAngleDeg + anglePerSector;
+          const startRad = (startAngleDeg * Math.PI) / 180;
+          const endRad = (endAngleDeg * Math.PI) / 180;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.arc(centerX, centerY, radius, startRad, endRad);
+          ctx.closePath();
+          ctx.fillStyle = prizes[i].color;
+          ctx.fill();
+          ctx.strokeStyle = '#FFF';
+          ctx.lineWidth = 5;
+          ctx.stroke();
+          ctx.save();
+          ctx.translate(centerX, centerY);
+          const midAngleRad = (startRad + endRad) / 2;
+          ctx.rotate(midAngleRad);
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 28px 'PingFang SC', 'Microsoft YaHei', sans-serif";
+          ctx.shadowColor = "rgba(0,0,0,0.5)";
+          ctx.shadowBlur = 6;
+          const textRadius = radius * 0.65;
+          ctx.fillText(prizes[i].name, textRadius, -10);
+          ctx.font = "20px 'PingFang SC', 'Microsoft YaHei', sans-serif";
+          ctx.fillText(prizes[i].desc, textRadius, 22);
+          ctx.restore();
+        }
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius * 0.1, 0, 2 * Math.PI);
+        ctx.fillStyle = "#FFF";
+        ctx.fill();
+        ctx.strokeStyle = "#D4A373";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+
+      drawWheel();
+
+      let currentRotation = 0;
+      let isSpinning = false;
+
+      function getRandomPrizeIndex(probs) {
+        const rand = Math.random();
+        let cumulative = 0;
+        for (let i = 0; i < probs.length; i++) {
+          cumulative += probs[i];
+          if (rand < cumulative) return i;
+        }
+        return probs.length - 1;
+      }
+
+      updateUI();
+      renderRecords();
+
+      window.addEventListener('click', function(e) {
+        ['wechatModal','adminModal','consumeModal','resetAllModal','markUsedModal','deleteRecordModal'].forEach(id => {
+          if (e.target === document.getElementById(id)) document.getElementById(id).style.display = 'none';
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
